@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Geography Quest</title>
+<meta name="theme-color" content="#060d1f">
+<meta name="description" content="Learn country names by clicking them on the map, continent by continent. English & Greek.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GeoQuest">
 <style>
   :root{
     --bg0:#060d1f; --bg1:#0b1830; --ink:#e8eefc; --dim:#8fa3c8;
@@ -849,6 +858,11 @@ function loop(t){
 }
 requestAnimationFrame(loop);
 setVB();
+
+/* ---------- PWA ---------- */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+}
 </script>
 </body>
 </html>

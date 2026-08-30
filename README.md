@@ -11,6 +11,11 @@ Learn country names by clicking them on a real world map, continent by continent
 - **Two languages**: English and Greek (pick on the title screen). In Greek, country names show with the English name as smaller secondary text.
 - **Works with mouse and touch**: drag or swipe to pan; scroll-wheel, pinch, or the on-screen ＋/−/⛶ buttons to zoom. All sound effects are synthesized live with the Web Audio API (🔊 button to mute).
 
+## PWA
+The game is an installable Progressive Web App: `manifest.webmanifest` + `sw.js` precache everything, so once visited over HTTPS (or localhost) it works fully offline and can be added to the home screen on iOS/Android (standalone, dark theme, custom map icon). The service worker only registers when served over http(s) — opening `index.html` from disk still works as before. Bump the `CACHE` version in `sw.js` when deploying changes.
+
+Icons are generated from the real map data: `PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core/index.mjs node make-icons.mjs` (needs Google Chrome).
+
 ## Rebuilding the map data
 `index.html` is generated from `index.src.html` + `map-data.js`:
 
