@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Geography Quest</title>
+<style>
+  :root{
+    --bg0:#060d1f; --bg1:#0b1830; --ink:#e8eefc; --dim:#8fa3c8;
+    --card:#101d38; --card2:#16264a; --line:#24365c;
+    --ocean0:#0a1b3a; --ocean1:#123058;
+    --gold:#fbbf24; --red:#f87171; --good:#34d399;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(120% 90% at 50% 0%,var(--bg1) 0%,var(--bg0) 70%);
+    color:var(--ink); overflow:hidden; user-select:none;
+  }
+  #app{position:fixed;inset:0}
+
+  /* ---------- map ---------- */
+  #map{position:absolute;inset:0;width:100%;height:100%;display:block;
+    background:
+      radial-gradient(90% 70% at 30% 20%, rgba(46,109,180,.14), transparent 60%),
+      radial-gradient(80% 60% at 75% 75%, rgba(24,160,190,.10), transparent 60%),
+      linear-gradient(180deg,var(--ocean0),var(--ocean1) 55%,var(--ocean0));
+    cursor:grab;
+    touch-action:none; /* game handles pan/pinch itself */
+  }
+  #map.dragging{cursor:grabbing}
+  #graticule{fill:none;stroke:#3b5a8f;stroke-opacity:.16;stroke-width:.6px;vector-effect:non-scaling-stroke}
+  .country{fill:#223250;stroke:#0c1730;stroke-width:.5;stroke-linejoin:round;transition:fill .25s,filter .25s,opacity .4s;pointer-events:none}
+  .country.scenery{fill:#1b2742}
+  .country.active{fill:#3d4f74;stroke:#0e1c3a;pointer-events:auto;cursor:pointer}
+  .country.active:hover{fill:#54689a;filter:drop-shadow(0 0 4px rgba(120,170,255,.55))}
+  .country.found{fill:var(--good);stroke:rgba(0,0,0,.35);pointer-events:auto;cursor:default;filter:drop-shadow(0 0 3px rgba(52,211,153,.4))}
+  .country.found:hover{fill:#4ee6ab;filter:drop-shadow(0 0 6px rgba(52,211,153,.6))}
+  .country.dimmed{opacity:.38}
+  .country.wrongflash{animation:wrongflash .55s ease}
+  @keyframes wrongflash{0%,60%{fill:var(--red);filter:drop-shadow(0 0 8px rgba(248,113,113,.9))}100%{}}
+  .country.hint{animation:hintpulse 0.8s ease 2}
+  @keyframes hintpulse{50%{fill:#7fa8e8;filter:drop-shadow(0 0 7px rgba(140,190,255,.9))}}
+  .country.reveal{animation:revealpulse 1s ease infinite;pointer-events:auto;cursor:pointer}
+  @keyframes revealpulse{50%{fill:var(--gold);filter:drop-shadow(0 0 9px rgba(251,191,36,.95))}}
+  .country.justfound{animation:foundpop .6s ease}
+  @keyframes foundpop{0%{fill:#fff;filter:drop-shadow(0 0 12px #fff)}100%{}}
+  #labels text{fill:#fff;stroke:rgba(5,12,28,.85);stroke-width:.35em;paint-order:stroke;
+    font-weight:700;text-anchor:middle;pointer-events:none;opacity:0;transition:opacity .5s;
+    font-family:inherit}
+  #labels text.show{opacity:.95}
+
+  /* ---------- HUD ---------- */
+  .hud{position:absolute;left:0;right:0;display:flex;align-items:center;gap:14px;padding:12px 18px;z-index:5;pointer-events:none}
+  .hud>*{pointer-events:auto}
+  #hudTop{top:0}
+  #contTitle{font-size:15px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+  #progressWrap{flex:1;max-width:340px;height:10px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+  #progressBar{height:100%;width:0%;border-radius:99px;background:linear-gradient(90deg,var(--accent,#34d399),#fff3);background-color:var(--accent,#34d399);transition:width .45s cubic-bezier(.2,.9,.3,1.2)}
+  .stat{font-variant-numeric:tabular-nums;font-weight:800;font-size:18px}
+  .stat small{display:block;font-size:10px;font-weight:600;letter-spacing:.14em;color:var(--dim)}
+  #streak.hot{color:var(--gold);text-shadow:0 0 12px rgba(251,191,36,.6)}
+  .iconbtn{background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--ink);
+    width:38px;height:38px;border-radius:12px;font-size:17px;cursor:pointer;transition:.15s;
+    touch-action:manipulation}
+  .iconbtn:hover{background:rgba(255,255,255,.15)}
+  #zoomCtl{position:absolute;right:14px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:5;
+    display:none;flex-direction:column;gap:8px}
+  #zoomCtl .iconbtn{width:46px;height:46px;font-size:22px;font-weight:700;
+    background:rgba(13,25,52,.85);backdrop-filter:blur(4px)}
+  #zoomCtl .iconbtn:active{background:rgba(255,255,255,.2)}
+
+  #prompt{position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:5;text-align:center;
+    background:linear-gradient(180deg,rgba(13,25,52,.92),rgba(10,20,42,.85));
+    border:1px solid var(--line);border-radius:18px;padding:10px 30px 13px;
+    box-shadow:0 8px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+    backdrop-filter:blur(6px)}
+  #prompt .find{font-size:11px;letter-spacing:.28em;color:var(--dim);font-weight:700}
+  #promptName{font-size:clamp(22px,4vw,34px);font-weight:900;letter-spacing:.01em;
+    background:linear-gradient(180deg,#fff,#bcd0f5);-webkit-background-clip:text;background-clip:text;color:transparent}
+  #prompt.pop{animation:promptpop .45s cubic-bezier(.2,1.4,.4,1)}
+  @keyframes promptpop{0%{transform:translateX(-50%) scale(.82)}100%{transform:translateX(-50%) scale(1)}}
+  #prompt.shake{animation:promptshake .4s}
+  @keyframes promptshake{20%{transform:translateX(calc(-50% - 9px))}40%{transform:translateX(calc(-50% + 8px))}60%{transform:translateX(calc(-50% - 5px))}80%{transform:translateX(calc(-50% + 4px))}}
+  #promptHint{font-size:12px;color:var(--gold);min-height:15px;font-weight:600}
+  #promptEn{font-size:14px;color:var(--dim);font-weight:700;letter-spacing:.03em}
+  #promptEn:empty{display:none}
+
+  #toast{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);z-index:5;
+    background:rgba(13,25,52,.9);border:1px solid var(--line);border-radius:12px;padding:8px 18px;
+    font-weight:700;opacity:0;transition:opacity .3s;pointer-events:none}
+  #toast.show{opacity:1}
+  #toast .pts{color:var(--good)}
+
+  #vignette{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;
+    box-shadow:inset 0 0 140px 40px rgba(248,113,113,.55)}
+  #vignette.on{animation:vig .5s ease}
+  @keyframes vig{20%{opacity:1}100%{opacity:0}}
+
+  #fx{position:absolute;inset:0;pointer-events:none;z-index:6}
+
+  /* ---------- screens ---------- */
+  .screen{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:22px;padding:24px;text-align:center;
+    background:radial-gradient(100% 100% at 50% 0%,rgba(9,17,36,.55),rgba(6,13,31,.88));
+    backdrop-filter:blur(3px);transition:opacity .45s;overflow:auto}
+  .screen.hidden{opacity:0;pointer-events:none}
+  .logo{font-size:clamp(38px,7vw,64px);font-weight:900;letter-spacing:-.02em;line-height:1.05;
+    filter:drop-shadow(0 4px 24px rgba(125,211,252,.25))}
+  .logo .grad{background:linear-gradient(120deg,#7dd3fc 0%,#a5b4fc 45%,#f0abfc 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .tagline{color:var(--dim);font-size:15px;max-width:440px;line-height:1.5}
+  .bigbtn{font:inherit;font-size:18px;font-weight:800;color:#06122a;cursor:pointer;border:none;
+    padding:15px 42px;border-radius:16px;letter-spacing:.02em;
+    background:linear-gradient(180deg,#8be9c9,#34d399);
+    box-shadow:0 6px 24px rgba(52,211,153,.35), inset 0 1px 0 rgba(255,255,255,.5);
+    transition:transform .12s, box-shadow .12s}
+  .bigbtn:hover{transform:translateY(-2px) scale(1.02);box-shadow:0 10px 30px rgba(52,211,153,.45), inset 0 1px 0 rgba(255,255,255,.5)}
+  .bigbtn:active{transform:scale(.98)}
+  .bigbtn.alt{background:linear-gradient(180deg,#a5c8ff,#60a5fa);box-shadow:0 6px 24px rgba(96,165,250,.35), inset 0 1px 0 rgba(255,255,255,.5)}
+  .linkbtn{background:none;border:none;color:var(--dim);font:inherit;font-size:14px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  .linkbtn:hover{color:var(--ink)}
+  #langRow{display:flex;gap:8px;background:rgba(255,255,255,.06);border:1px solid var(--line);
+    border-radius:99px;padding:4px}
+  .langbtn{font:inherit;font-size:13.5px;font-weight:700;color:var(--dim);background:none;border:none;
+    padding:7px 18px;border-radius:99px;cursor:pointer;transition:.15s;touch-action:manipulation}
+  .langbtn.on{background:linear-gradient(180deg,#a5c8ff,#60a5fa);color:#06122a}
+
+  #grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;width:min(860px,94vw)}
+  .card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);
+    border-radius:18px;padding:14px 14px 12px;cursor:pointer;transition:.18s;text-align:left;color:var(--ink);font:inherit;
+    display:flex;flex-direction:column;gap:8px;position:relative;overflow:hidden}
+  .card:hover{transform:translateY(-3px);border-color:var(--ac);box-shadow:0 10px 28px rgba(0,0,0,.4),0 0 0 1px var(--ac) inset}
+  .card svg{width:100%;height:86px;display:block;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
+  .card .cname{font-weight:800;font-size:16px}
+  .card .cmeta{display:flex;justify-content:space-between;align-items:center;color:var(--dim);font-size:12.5px;font-weight:600}
+  .card .stars{color:var(--gold);letter-spacing:2px;font-size:13px}
+  .card .best{color:var(--dim)}
+
+  /* results */
+  #resCard{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);
+    border-radius:24px;padding:34px 46px;box-shadow:0 20px 60px rgba(0,0,0,.5);max-width:480px}
+  #resTitle{font-size:30px;font-weight:900;margin-bottom:2px}
+  #resSub{color:var(--dim);font-weight:600;margin-bottom:14px}
+  #resStars{font-size:44px;letter-spacing:8px;min-height:58px}
+  #resStars span{display:inline-block;opacity:.18;transform:scale(.6);transition:.3s cubic-bezier(.2,1.6,.4,1)}
+  #resStars span.lit{opacity:1;transform:scale(1);color:var(--gold);text-shadow:0 0 22px rgba(251,191,36,.7)}
+  .resrow{display:flex;justify-content:space-between;gap:40px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.06);font-weight:600}
+  .resrow b{font-variant-numeric:tabular-nums}
+  #resBtns{display:flex;gap:12px;justify-content:center;margin-top:22px;flex-wrap:wrap}
+  #newBest{color:var(--good);font-weight:800;min-height:20px;margin-top:10px}
+
+  @media (max-width:640px){
+    #hudTop{gap:8px;padding:8px 10px}
+    #contTitle{display:none}
+    #prompt{top:56px;padding:8px 18px 10px;width:max-content;max-width:92vw}
+    #resCard{padding:24px 20px}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <svg id="map" viewBox="0 0 1000 520" preserveAspectRatio="xMidYMid meet" aria-label="World map">
+    <path id="graticule"/>
+    <g id="countries"></g>
+    <g id="labels"></g>
+  </svg>
+  <div id="vignette"></div>
+  <canvas id="fx"></canvas>
+
+  <div class="hud" id="hudTop" style="display:none">
+    <button class="iconbtn" id="btnQuit" title="Back to menu">←</button>
+    <div id="contTitle"></div>
+    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div class="stat"><small id="scoreLbl">SCORE</small><span id="score">0</span></div>
+    <div class="stat"><small id="streakLbl">STREAK</small><span id="streak">0</span></div>
+    <button class="iconbtn" id="btnSound" title="Toggle sound">🔊</button>
+  </div>
+
+  <div id="prompt" style="display:none">
+    <div class="find" id="findLbl">FIND</div>
+    <div id="promptName">France</div>
+    <div id="promptEn"></div>
+    <div id="promptHint"></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="zoomCtl">
+    <button class="iconbtn" id="zoomIn" title="Zoom in" aria-label="Zoom in">＋</button>
+    <button class="iconbtn" id="zoomOut" title="Zoom out" aria-label="Zoom out">－</button>
+    <button class="iconbtn" id="zoomFit" title="Fit continent" aria-label="Fit continent">⛶</button>
+  </div>
+
+  <div class="screen" id="titleScreen">
+    <div class="logo">🌍 <span class="grad">Geography Quest</span></div>
+    <div class="tagline" id="tagline"></div>
+    <button class="bigbtn" id="btnTour">▶&nbsp; Grand Tour</button>
+    <button class="bigbtn alt" id="btnPick">Choose a Continent</button>
+    <div id="langRow">
+      <button class="langbtn" data-lang="en">English</button>
+      <button class="langbtn" data-lang="el">Ελληνικά</button>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="selectScreen">
+    <div class="logo" style="font-size:clamp(26px,4vw,38px)"><span class="grad" id="selectTitle">Choose your continent</span></div>
+    <div id="grid"></div>
+    <button class="linkbtn" id="btnBackTitle">← back</button>
+  </div>
+
+  <div class="screen hidden" id="resultsScreen">
+    <div id="resCard">
+      <div id="resTitle">Continent complete!</div>
+      <div id="resSub"></div>
+      <div id="resStars"><span>★</span><span>★</span><span>★</span></div>
+      <div class="resrow"><span id="rowScore">Score</span><b id="resScore">0</b></div>
+      <div class="resrow"><span id="rowAcc">First-try accuracy</span><b id="resAcc">0%</b></div>
+      <div class="resrow"><span id="rowStreak">Best streak</span><b id="resStreak">0</b></div>
+      <div id="newBest"></div>
+      <div id="resBtns">
+        <button class="bigbtn alt" id="btnReplay">Replay</button>
+        <button class="bigbtn" id="btnNext">Next</button>
+        <button class="linkbtn" id="btnMenu">menu</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="map-data.js"></script>
+<script>
+'use strict';
+/* ============================== data ============================== */
+const MAP = window.MAP;
+const CONTS = ['Oceania','South America','North America','Europe','Africa','Asia'];
+const ACCENT = {
+  'Oceania':'#22d3ee','South America':'#34d399','North America':'#a78bfa',
+  'Europe':'#60a5fa','Africa':'#f59e0b','Asia':'#f472b6',
+};
+const EMOJI = {'Oceania':'🌏','South America':'🌎','North America':'🌎','Europe':'🌍','Africa':'🌍','Asia':'🌏'};
+
+/* ============================== i18n ============================== */
+const CONT_EL = {'Oceania':'Ωκεανία','South America':'Νότια Αμερική','North America':'Βόρεια Αμερική','Europe':'Ευρώπη','Africa':'Αφρική','Asia':'Ασία'};
+const GREEK = {"Afghanistan":"Αφγανιστάν","Albania":"Αλβανία","Algeria":"Αλγερία","Angola":"Αγκόλα","Antarctica":"Ανταρκτική","Argentina":"Αργεντινή","Armenia":"Αρμενία","Australia":"Αυστραλία","Austria":"Αυστρία","Azerbaijan":"Αζερμπαϊτζάν","Bahamas":"Μπαχάμες","Bangladesh":"Μπανγκλαντές","Belarus":"Λευκορωσία","Belgium":"Βέλγιο","Belize":"Μπελίζ","Benin":"Μπενίν","Bhutan":"Μπουτάν","Bolivia":"Βολιβία","Bosnia & Herzegovina":"Βοσνία-Ερζεγοβίνη","Botswana":"Μποτσουάνα","Brazil":"Βραζιλία","Brunei":"Μπρουνέι","Bulgaria":"Βουλγαρία","Burkina Faso":"Μπουρκίνα Φάσο","Burundi":"Μπουρούντι","Cambodia":"Καμπότζη","Cameroon":"Καμερούν","Canada":"Καναδάς","Central African Republic":"Κεντροαφρικανική Δημοκρατία","Chad":"Τσαντ","Chile":"Χιλή","China":"Κίνα","Colombia":"Κολομβία","Republic of the Congo":"Δημοκρατία του Κονγκό","Costa Rica":"Κόστα Ρίκα","Croatia":"Κροατία","Cuba":"Κούβα","Cyprus":"Κύπρος","Czechia":"Τσεχία","Côte d'Ivoire":"Ακτή Ελεφαντοστού","DR Congo":"ΛΔ Κονγκό","Denmark":"Δανία","Djibouti":"Τζιμπουτί","Dominican Republic":"Δομινικανή Δημοκρατία","Ecuador":"Ισημερινός","Egypt":"Αίγυπτος","El Salvador":"Ελ Σαλβαδόρ","Equatorial Guinea":"Ισημερινή Γουινέα","Eritrea":"Ερυθραία","Estonia":"Εσθονία","Ethiopia":"Αιθιοπία","Falkland Islands":"Νήσοι Φώκλαντ","Fiji":"Φίτζι","Finland":"Φινλανδία","France":"Γαλλία","Fr. S. Antarctic Lands":"Γαλλικά Νότια Εδάφη","Gabon":"Γκαμπόν","Gambia":"Γκάμπια","Georgia":"Γεωργία","Germany":"Γερμανία","Ghana":"Γκάνα","Greece":"Ελλάδα","Greenland":"Γροιλανδία","Guatemala":"Γουατεμάλα","Guinea":"Γουινέα","Guinea-Bissau":"Γουινέα-Μπισάου","Guyana":"Γουιάνα","Haiti":"Αϊτή","Honduras":"Ονδούρα","Hungary":"Ουγγαρία","Iceland":"Ισλανδία","India":"Ινδία","Indonesia":"Ινδονησία","Iran":"Ιράν","Iraq":"Ιράκ","Ireland":"Ιρλανδία","Israel":"Ισραήλ","Italy":"Ιταλία","Jamaica":"Τζαμάικα","Japan":"Ιαπωνία","Jordan":"Ιορδανία","Kazakhstan":"Καζακστάν","Kenya":"Κένυα","Kosovo":"Κόσοβο","Kuwait":"Κουβέιτ","Kyrgyzstan":"Κιργιζία","Laos":"Λάος","Latvia":"Λετονία","Lebanon":"Λίβανος","Lesotho":"Λεσότο","Liberia":"Λιβερία","Libya":"Λιβύη","Lithuania":"Λιθουανία","Luxembourg":"Λουξεμβούργο","North Macedonia":"Βόρεια Μακεδονία","Madagascar":"Μαδαγασκάρη","Malawi":"Μαλάουι","Malaysia":"Μαλαισία","Mali":"Μάλι","Mauritania":"Μαυριτανία","Mexico":"Μεξικό","Moldova":"Μολδαβία","Mongolia":"Μογγολία","Montenegro":"Μαυροβούνιο","Morocco":"Μαρόκο","Mozambique":"Μοζαμβίκη","Myanmar":"Μιανμάρ","N. Cyprus":"Βόρεια Κύπρος","Namibia":"Ναμίμπια","Nepal":"Νεπάλ","Netherlands":"Ολλανδία","New Caledonia":"Νέα Καληδονία","New Zealand":"Νέα Ζηλανδία","Nicaragua":"Νικαράγουα","Niger":"Νίγηρας","Nigeria":"Νιγηρία","North Korea":"Βόρεια Κορέα","Norway":"Νορβηγία","Oman":"Ομάν","Pakistan":"Πακιστάν","Palestine":"Παλαιστίνη","Panama":"Παναμάς","Papua New Guinea":"Παπούα Νέα Γουινέα","Paraguay":"Παραγουάη","Peru":"Περού","Philippines":"Φιλιππίνες","Poland":"Πολωνία","Portugal":"Πορτογαλία","Puerto Rico":"Πουέρτο Ρίκο","Qatar":"Κατάρ","Romania":"Ρουμανία","Russia":"Ρωσία","Rwanda":"Ρουάντα","South Sudan":"Νότιο Σουδάν","Saudi Arabia":"Σαουδική Αραβία","Senegal":"Σενεγάλη","Serbia":"Σερβία","Sierra Leone":"Σιέρα Λεόνε","Slovakia":"Σλοβακία","Slovenia":"Σλοβενία","Solomon Islands":"Νήσοι Σολομώντα","Somalia":"Σομαλία","Somaliland":"Σομαλιλάνδη","South Africa":"Νότια Αφρική","South Korea":"Νότια Κορέα","Spain":"Ισπανία","Sri Lanka":"Σρι Λάνκα","Sudan":"Σουδάν","Suriname":"Σουρινάμ","Sweden":"Σουηδία","Switzerland":"Ελβετία","Syria":"Συρία","Taiwan":"Ταϊβάν","Tajikistan":"Τατζικιστάν","Tanzania":"Τανζανία","Thailand":"Ταϊλάνδη","Timor-Leste":"Ανατολικό Τιμόρ","Togo":"Τόγκο","Trinidad and Tobago":"Τρινιντάντ και Τομπάγκο","Tunisia":"Τυνησία","Turkey":"Τουρκία","Turkmenistan":"Τουρκμενιστάν","Uganda":"Ουγκάντα","Ukraine":"Ουκρανία","United Arab Emirates":"Ηνωμένα Αραβικά Εμιράτα","United Kingdom":"Ηνωμένο Βασίλειο","United States":"Ηνωμένες Πολιτείες","Uruguay":"Ουρουγουάη","Uzbekistan":"Ουζμπεκιστάν","Vanuatu":"Βανουάτου","Venezuela":"Βενεζουέλα","Vietnam":"Βιετνάμ","Western Sahara":"Δυτική Σαχάρα","Yemen":"Υεμένη","Zambia":"Ζάμπια","Zimbabwe":"Ζιμπάμπουε","Eswatini":"Εσουατίνι"};
+const STR = {
+  en: {
+    tagline: 'Learn every country on the map, one continent at a time.<br>Read the name — click the country. Build streaks, earn stars.',
+    tour: 'Grand Tour', pick: 'Choose a Continent', choose: 'Choose your continent', back: 'back',
+    find: 'FIND', score: 'SCORE', streak: 'STREAK', streakHot: 'STREAK 🔥',
+    countries: 'countries', best: 'best',
+    complete: c => c + ' complete!', sub: (f,t) => `${f} of ${t} on the first try`,
+    rowScore: 'Score', rowAcc: 'First-try accuracy', rowStreak: 'Best streak',
+    replay: 'Replay', next: 'Next', nextC: c => `Next: ${c} →`, conts: 'Continents', menu: 'menu',
+    newBest: '🏆 New personal best!',
+    first: 'first try!', fast: 'lightning fast!', got: 'got it', mem: 'memorized ✓', streakN: n => `${n} streak! 🔥`,
+    hintWas: n => `That was ${n} — watch for the glow…`, hintMore: 'One more glow — look closely…',
+    hintReveal: '✨ Click the glowing country to remember it',
+  },
+  el: {
+    tagline: 'Μάθε όλες τις χώρες στον χάρτη, ήπειρο-ήπειρο.<br>Διάβασε το όνομα — πάτησε τη χώρα. Χτίσε σερί, κέρδισε αστέρια.',
+    tour: 'Ο Μεγάλος Γύρος', pick: 'Διάλεξε Ήπειρο', choose: 'Διάλεξε ήπειρο', back: 'πίσω',
+    find: 'ΒΡΕΣ', score: 'ΣΚΟΡ', streak: 'ΣΕΡΙ', streakHot: 'ΣΕΡΙ 🔥',
+    countries: 'χώρες', best: 'ρεκόρ',
+    complete: c => `Η ήπειρος ${c} ολοκληρώθηκε!`, sub: (f,t) => `${f} από ${t} με την πρώτη`,
+    rowScore: 'Σκορ', rowAcc: 'Ευστοχία με την πρώτη', rowStreak: 'Καλύτερο σερί',
+    replay: 'Ξανά', next: 'Επόμενο', nextC: c => `Επόμενο: ${c} →`, conts: 'Ήπειροι', menu: 'μενού',
+    newBest: '🏆 Νέο προσωπικό ρεκόρ!',
+    first: 'με την πρώτη!', fast: 'αστραπή!', got: 'το βρήκες', mem: 'το έμαθες ✓', streakN: n => `σερί ${n}! 🔥`,
+    hintWas: n => `Αυτό ήταν: ${n} — δες τη λάμψη…`, hintMore: 'Άλλη μία λάμψη — κοίτα προσεκτικά…',
+    hintReveal: '✨ Πάτησε τη χώρα που λάμπει για να τη θυμάσαι',
+  },
+};
+const lang = () => store.lang === 'el' ? 'el' : 'en';
+const T = () => STR[lang()];
+const cName = c => lang() === 'el' ? (GREEK[c.name] || c.name) : c.name;   // primary
+const cNameEn = c => lang() === 'el' ? c.name : '';                        // secondary
+const contName = cont => lang() === 'el' ? CONT_EL[cont] : cont;
+// Greek all-caps drops accents (ΕΥΡΩΠΗ, not ΕΥΡΏΠΗ) — feed the CSS-uppercased HUD an accentless string
+const contNameCaps = cont => lang() === 'el'
+  ? CONT_EL[cont].normalize('NFD').replace(/\u0301/g, '').normalize('NFC') : cont;
+function applyLang(){
+  const L = T();
+  $('tagline').innerHTML = L.tagline;
+  $('btnTour').innerHTML = '▶&nbsp; ' + L.tour;
+  $('btnPick').textContent = L.pick;
+  $('selectTitle').textContent = L.choose;
+  $('btnBackTitle').textContent = '← ' + L.back;
+  $('findLbl').textContent = L.find;
+  $('scoreLbl').textContent = L.score;
+  $('streakLbl').textContent = L.streak;
+  $('rowScore').textContent = L.rowScore;
+  $('rowAcc').textContent = L.rowAcc;
+  $('rowStreak').textContent = L.rowStreak;
+  $('btnReplay').textContent = L.replay;
+  $('btnMenu').textContent = L.menu;
+  document.querySelectorAll('.langbtn').forEach(b => b.classList.toggle('on', b.dataset.lang === lang()));
+}
+const WORLD = {x:0,y:28,w:MAP.W,h:MAP.H-90}; // trim empty poles a bit
+
+const $ = id => document.getElementById(id);
+const svg = $('map'), gCountries = $('countries'), gLabels = $('labels');
+$('graticule').setAttribute('d', MAP.graticule);
+
+const store = (()=>{ try{ return JSON.parse(localStorage.getItem('geoquest')||'{}'); }catch(e){ return {}; } })();
+store.continents = store.continents || {};
+const save = () => { try{ localStorage.setItem('geoquest', JSON.stringify(store)); }catch(e){} };
+
+/* build country paths */
+const byId = {};
+for (const c of MAP.countries) {
+  const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+  p.setAttribute('d', c.d);
+  p.setAttribute('class', 'country' + (c.c === 'Antarctica' ? ' scenery' : ''));
+  p.dataset.id = c.id;
+  gCountries.appendChild(p);
+  byId[c.id] = { ...c, el: p };
+}
+
+/* ============================== camera ============================== */
+let vb = {...WORLD}, tween = null, idleDrift = true, driftBase = {...WORLD};
+const clampBox = null;
+let panBounds = null, minW = 20, maxW = MAP.W;
+
+function setVB(){ svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`); }
+const ease = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+function flyTo(box, dur=1300){
+  idleDrift = false;
+  tween = { from:{...vb}, to:{...box}, t0:performance.now(), dur };
+}
+function pad(b, f){ const px=b[2]*f, py=b[3]*f; return {x:b[0]-px, y:b[1]-py, w:b[2]+2*px, h:b[3]+2*py}; }
+
+/* pan / zoom / pinch — pointer events cover mouse, touch and pen.
+   NB: no setPointerCapture on the svg root — it would retarget the derived
+   click event away from the country paths, breaking answer clicks. */
+let drag = null, pinch = null, suppressClick = false;
+const pointers = new Map();
+function screenToSvg(cx, cy){
+  const r = svg.getBoundingClientRect();
+  const s = Math.min(r.width/vb.w, r.height/vb.h);
+  const ox = r.left + (r.width - vb.w*s)/2, oy = r.top + (r.height - vb.h*s)/2;
+  return { x: vb.x + (cx-ox)/s, y: vb.y + (cy-oy)/s, s };
+}
+function clampPan(b = vb){
+  if (!panBounds) return;
+  b.w = Math.min(Math.max(b.w, minW), maxW);
+  b.h = b.w * panBounds.h / panBounds.w;
+  b.x = Math.min(Math.max(b.x, panBounds.x - b.w*.25), panBounds.x + panBounds.w + b.w*.25 - b.w);
+  b.y = Math.min(Math.max(b.y, panBounds.y - b.h*.25), panBounds.y + panBounds.h + b.h*.25 - b.h);
+}
+svg.addEventListener('pointerdown', ev => {
+  if (game.screen !== 'play') return;
+  pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (pointers.size === 1 && !tween){
+    drag = { x: ev.clientX, y: ev.clientY, vb: {...vb}, moved: false };
+  } else if (pointers.size === 2){
+    tween = null; drag = null; svg.classList.remove('dragging');
+    suppressClick = true; // a pinch is never an answer
+    const [a, b] = [...pointers.values()];
+    pinch = {
+      d0: Math.hypot(a.x-b.x, a.y-b.y) || 1,
+      w0: vb.w,
+      p0: screenToSvg((a.x+b.x)/2, (a.y+b.y)/2),
+    };
+  }
+});
+svg.addEventListener('pointermove', ev => {
+  if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (pinch && pointers.size >= 2){
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x-b.x, a.y-b.y) || 1;
+    const mid = { x: (a.x+b.x)/2, y: (a.y+b.y)/2 };
+    const nw = Math.min(Math.max(pinch.w0 * pinch.d0 / d, minW), maxW);
+    const nh = nw * vb.h / vb.w;
+    const r = svg.getBoundingClientRect();
+    const s = Math.min(r.width/nw, r.height/nh);
+    const ox = (r.width - nw*s)/2, oy = (r.height - nh*s)/2;
+    vb.w = nw; vb.h = nh;
+    vb.x = pinch.p0.x - (mid.x - r.left - ox)/s;
+    vb.y = pinch.p0.y - (mid.y - r.top - oy)/s;
+    clampPan(); setVB();
+    return;
+  }
+  if (!drag) return;
+  const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+  const thresh = ev.pointerType === 'touch' ? 12 : 6; // touch taps jitter more
+  if (Math.abs(dx)+Math.abs(dy) > thresh) { drag.moved = true; svg.classList.add('dragging'); }
+  if (!drag.moved) return;
+  const r = svg.getBoundingClientRect();
+  const s = Math.min(r.width/vb.w, r.height/vb.h);
+  vb.x = drag.vb.x - dx/s; vb.y = drag.vb.y - dy/s;
+  clampPan(); setVB();
+});
+function endPointer(ev){
+  pointers.delete(ev.pointerId);
+  if (pinch && pointers.size < 2){
+    pinch = null;
+    setTimeout(()=>suppressClick = false, 80);
+    if (pointers.size === 1){ // one finger stays down: continue as a pan
+      const p = [...pointers.values()][0];
+      drag = { x: p.x, y: p.y, vb: {...vb}, moved: true };
+      return;
+    }
+  }
+  if (drag && pointers.size === 0){
+    if (drag.moved){ suppressClick = true; setTimeout(()=>suppressClick = false, 60); }
+    drag = null; svg.classList.remove('dragging');
+  }
+}
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+svg.addEventListener('wheel', ev => {
+  if (game.screen !== 'play' || tween) return;
+  ev.preventDefault();
+  const m = screenToSvg(ev.clientX, ev.clientY);
+  const f = Math.exp(ev.deltaY * 0.0016);
+  const nw = Math.min(Math.max(vb.w * f, minW), maxW);
+  const k = nw / vb.w;
+  vb.x = m.x - (m.x - vb.x) * k;
+  vb.y = m.y - (m.y - vb.y) * k;
+  vb.w = nw; vb.h = vb.h * k;
+  clampPan(); setVB();
+}, { passive:false });
+
+/* on-screen zoom buttons */
+function zoomStep(f){
+  if (game.screen !== 'play') return;
+  const nw = Math.min(Math.max(vb.w * f, minW), maxW);
+  const k = nw / vb.w;
+  const b = { x: vb.x + (vb.w - nw)/2, y: vb.y + (vb.h - vb.h*k)/2, w: nw, h: vb.h*k };
+  clampPan(b);
+  flyTo(b, 240);
+}
+$('zoomIn').addEventListener('click', () => zoomStep(1/1.5));
+$('zoomOut').addEventListener('click', () => zoomStep(1.5));
+$('zoomFit').addEventListener('click', () => {
+  if (game.screen === 'play' && game.cont) flyTo(pad(MAP.continents[game.cont], 0.05), 600);
+});
+
+/* ============================== audio ============================== */
+let ac = null, master = null;
+function ensureAudio(){
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ac = new AC();
+    master = ac.createGain();
+    master.gain.value = store.muted ? 0 : 0.55;
+    master.connect(ac.destination);
+    startAmbient();
+  }
+  if (ac.state === 'suspended') ac.resume();
+}
+function tone(freq, t0, dur, {type='sine', vol=.2, glideTo=null, filter=null} = {}){
+  if (!ac) return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t0);
+  if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t0+dur);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(vol, t0+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  let dest = master;
+  if (filter){ const f = ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=filter; f.connect(master); dest=f; }
+  o.connect(g); g.connect(dest);
+  o.start(t0); o.stop(t0+dur+.05);
+}
+const sfx = {
+  correct(){ if(!ac)return; const t=ac.currentTime;
+    tone(523.25,t,.35,{type:'triangle',vol:.28}); tone(659.25,t+.07,.4,{type:'triangle',vol:.28});
+    tone(783.99,t+.14,.5,{type:'triangle',vol:.26}); tone(1567.98,t+.14,.4,{type:'sine',vol:.07}); },
+  wrong(){ if(!ac)return; const t=ac.currentTime;
+    tone(150,t,.28,{type:'sawtooth',vol:.22,glideTo:88,filter:420}); tone(105,t+.02,.3,{type:'square',vol:.1,glideTo:70,filter:300}); },
+  reveal(){ if(!ac)return; const t=ac.currentTime; tone(880,t,.5,{type:'sine',vol:.16}); tone(1108.7,t+.12,.55,{type:'sine',vol:.12}); },
+  tick(){ if(!ac)return; tone(1900,ac.currentTime,.03,{type:'sine',vol:.028}); },
+  star(i){ if(!ac)return; tone([659.25,830.61,1046.5][i]||1046.5,ac.currentTime,.5,{type:'triangle',vol:.25}); },
+  fanfare(){ if(!ac)return; const t=ac.currentTime; const N=[523.25,659.25,783.99,1046.5,1318.5];
+    N.forEach((f,i)=>{ tone(f,t+i*.11,.5,{type:'triangle',vol:.24}); tone(f/2,t+i*.11,.5,{type:'sine',vol:.1}); });
+    tone(1046.5,t+.62,.9,{type:'triangle',vol:.26}); tone(1318.5,t+.62,.9,{type:'sine',vol:.12}); },
+  whoosh(){ if(!ac)return; const t=ac.currentTime; tone(220,t,.55,{type:'sine',vol:.1,glideTo:440,filter:900}); },
+};
+function startAmbient(){
+  const len = ac.sampleRate * 4;
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i=0;i<len;i++){ const w = Math.random()*2-1; last = last*0.965 + w*0.035; d[i] = last*6; }
+  const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+  const f = ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value = 320; f.Q.value = .4;
+  const g = ac.createGain(); g.gain.value = .055;
+  const lfo = ac.createOscillator(), lg = ac.createGain();
+  lfo.frequency.value = .07; lg.gain.value = 120; lfo.connect(lg); lg.connect(f.frequency);
+  src.connect(f); f.connect(g); g.connect(master); src.start(); lfo.start();
+}
+let lastTick = 0;
+gCountries.addEventListener('pointerover', ev => {
+  if (game.screen!=='play' || !ev.target.classList.contains('active')) return;
+  const now = performance.now();
+  if (now - lastTick > 70) { lastTick = now; sfx.tick(); }
+});
+$('btnSound').addEventListener('click', () => {
+  store.muted = !store.muted; save();
+  $('btnSound').textContent = store.muted ? '🔇' : '🔊';
+  if (master) master.gain.value = store.muted ? 0 : 0.55;
+});
+$('btnSound').textContent = store.muted ? '🔇' : '🔊';
+
+/* ============================== confetti ============================== */
+const fx = $('fx'), fctx = fx.getContext('2d');
+let parts = [];
+function sizeFx(){ const d = window.devicePixelRatio||1;
+  fx.width = innerWidth*d; fx.height = innerHeight*d; fctx.setTransform(d,0,0,d,0,0); }
+sizeFx(); addEventListener('resize', sizeFx);
+function svgToScreen(cx, cy){
+  const r = svg.getBoundingClientRect();
+  const s = Math.min(r.width/vb.w, r.height/vb.h);
+  const ox = r.left + (r.width - vb.w*s)/2 - vb.x*s;
+  const oy = r.top + (r.height - vb.h*s)/2 - vb.y*s;
+  return [ox + cx*s, oy + cy*s];
+}
+function burst(x, y, color, n=42){
+  for (let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2, sp = 2.4 + Math.random()*5.5;
+    parts.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - 2.6,
+      rot: Math.random()*Math.PI, vr:(Math.random()-.5)*.34,
+      w: 4+Math.random()*6, h: 3+Math.random()*4, life: 1,
+      col: Math.random()<.65 ? color : ['#ffffff','#fbbf24','#7dd3fc'][Math.floor(Math.random()*3)] });
+  }
+}
+function drawFx(){
+  if (!parts.length){ fctx.clearRect(0,0,innerWidth,innerHeight); return; }
+  fctx.clearRect(0,0,innerWidth,innerHeight);
+  parts = parts.filter(p => p.life > 0);
+  for (const p of parts){
+    p.x += p.vx; p.y += p.vy; p.vy += .16; p.vx *= .99; p.rot += p.vr; p.life -= .012;
+    fctx.save(); fctx.globalAlpha = Math.max(0, Math.min(1, p.life*1.6));
+    fctx.translate(p.x, p.y); fctx.rotate(p.rot);
+    fctx.fillStyle = p.col; fctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+    fctx.restore();
+  }
+}
+
+/* ============================== game state ============================== */
+const game = {
+  screen: 'title',   // title | select | play | results
+  tour: false, tourIdx: 0,
+  cont: null, queue: [], idx: 0,
+  attempts: 0, revealed: false,
+  score: 0, streak: 0, bestStreak: 0, firstTry: 0,
+  roundStart: 0, levelDone: false,
+};
+
+function setAccent(cont){
+  const a = ACCENT[cont];
+  document.documentElement.style.setProperty('--accent', a);
+  document.documentElement.style.setProperty('--accent-glow', a + '99');
+}
+function showScreen(id){
+  for (const s of ['titleScreen','selectScreen','resultsScreen'])
+    $(s).classList.toggle('hidden', s !== id);
+}
+function toast(html, ms=1400){
+  const t = $('toast'); t.innerHTML = html; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), ms);
+}
+
+/* ---------- level ---------- */
+function startLevel(cont){
+  ensureAudio();
+  game.cont = cont; game.screen = 'play';
+  game.queue = MAP.countries.filter(c => c.c === cont && c.q)
+    .sort(() => Math.random() - .5);
+  game.idx = 0; game.score = 0; game.streak = 0; game.bestStreak = 0;
+  game.firstTry = 0; game.levelDone = false;
+  setAccent(cont);
+  gLabels.innerHTML = '';
+  for (const id in byId){
+    const c = byId[id];
+    c.el.classList.remove('found','reveal','hint','wrongflash','justfound','dimmed','active');
+    if (c.c === cont && c.q) c.el.classList.add('active');
+    else if (c.c !== 'Antarctica') c.el.classList.add('dimmed');
+  }
+  const box = pad(MAP.continents[cont], 0.05);
+  panBounds = box; minW = box.w * 0.14; maxW = Math.min(box.w * 1.6, MAP.W);
+  flyTo(box, 1400);
+  sfx.whoosh();
+  showScreen('none');
+  $('hudTop').style.display = 'flex';
+  $('zoomCtl').style.display = 'flex';
+  $('contTitle').textContent = EMOJI[cont] + '  ' + contNameCaps(cont);
+  updateHud();
+  setTimeout(() => { $('prompt').style.display = 'block'; nextRound(true); }, 1250);
+}
+function labelSize(){
+  const b = MAP.continents[game.cont];
+  return Math.max(3, Math.min(9, b[3] * 0.032));
+}
+function nextRound(first){
+  if (game.idx >= game.queue.length) return endLevel();
+  game.attempts = 0; game.revealed = false;
+  game.roundStart = performance.now();
+  const c = game.queue[game.idx];
+  $('promptName').textContent = cName(c);
+  $('promptEn').textContent = cNameEn(c);
+  $('promptHint').textContent = '';
+  const p = $('prompt');
+  p.classList.remove('pop'); void p.offsetWidth; p.classList.add('pop');
+  updateHud();
+}
+function updateHud(){
+  $('score').textContent = game.score;
+  $('streak').textContent = game.streak;
+  $('streak').classList.toggle('hot', game.streak >= 5);
+  $('streakLbl').textContent = game.streak >= 5 ? T().streakHot : T().streak;
+  $('progressBar').style.width = (game.idx / game.queue.length * 100) + '%';
+}
+function makeLabel(c){
+  const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+  t.setAttribute('x', c.cx); t.setAttribute('y', c.cy);
+  t.setAttribute('font-size', labelSize());
+  const t1 = document.createElementNS('http://www.w3.org/2000/svg','tspan');
+  t1.textContent = cName(c);
+  t.appendChild(t1);
+  if (cNameEn(c)){
+    const t2 = document.createElementNS('http://www.w3.org/2000/svg','tspan');
+    t2.setAttribute('x', c.cx); t2.setAttribute('dy', '1.1em');
+    t2.setAttribute('font-size', '65%'); t2.setAttribute('fill-opacity', '.8');
+    t2.textContent = cNameEn(c);
+    t.appendChild(t2);
+  }
+  gLabels.appendChild(t);
+  requestAnimationFrame(()=>t.classList.add('show'));
+  return t;
+}
+// Labels are transient (persistent ones pile up where small countries cluster);
+// found countries stay green, and hovering one shows its name again.
+function flashLabel(c, ms=1700){
+  const t = makeLabel(c);
+  setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(), 550); }, ms);
+}
+let hoverLabel = null;
+gCountries.addEventListener('pointerover', ev => {
+  if (ev.target.classList && ev.target.classList.contains('found')){
+    const c = byId[ev.target.dataset.id];
+    if (c){ if (hoverLabel) hoverLabel.remove(); hoverLabel = makeLabel(c); }
+  }
+});
+gCountries.addEventListener('pointerout', ev => {
+  if (hoverLabel && ev.target.classList && ev.target.classList.contains('found')){
+    hoverLabel.remove(); hoverLabel = null;
+  }
+});
+function handleCorrect(c){
+  const el = byId[c.id].el;
+  el.classList.remove('active','reveal','hint');
+  el.classList.add('found','justfound');
+  flashLabel(c);
+  const L = T();
+  let pts = 0, note = '';
+  if (game.revealed){ pts = 0; note = L.mem; }
+  else if (game.attempts === 0){
+    const secs = (performance.now() - game.roundStart) / 1000;
+    const bonus = Math.max(0, Math.round(50 - secs * 10));
+    pts = 100 + bonus;
+    game.firstTry++; game.streak++;
+    game.bestStreak = Math.max(game.bestStreak, game.streak);
+    note = bonus > 20 ? L.fast : L.first;
+    if (game.streak > 0 && game.streak % 5 === 0) note = L.streakN(game.streak);
+  } else { pts = game.attempts === 1 ? 60 : 30; note = L.got; }
+  game.score += pts;
+  sfx[game.revealed ? 'reveal' : 'correct']();
+  const [sx, sy] = svgToScreen(c.cx, c.cy);
+  burst(sx, sy, ACCENT[game.cont], game.revealed ? 16 : 42);
+  const shown = cNameEn(c) ? `${cName(c)} <small style="opacity:.7">(${c.name})</small>` : c.name;
+  toast(`<b>${shown}</b> — ${note} ${pts ? `<span class="pts">+${pts}</span>` : ''}`);
+  game.idx++;
+  updateHud();
+  setTimeout(() => nextRound(), 650);
+}
+function handleWrong(clickedEl){
+  game.attempts++; game.streak = 0;
+  const target = game.queue[game.idx];
+  sfx.wrong();
+  clickedEl.classList.remove('wrongflash'); void clickedEl.getBBox; clickedEl.classList.add('wrongflash');
+  setTimeout(()=>clickedEl.classList.remove('wrongflash'), 600);
+  $('vignette').classList.remove('on'); void $('vignette').offsetWidth; $('vignette').classList.add('on');
+  const p = $('prompt'); p.classList.remove('shake'); void p.offsetWidth; p.classList.add('shake');
+  const wrongC = clickedEl.dataset.id ? byId[clickedEl.dataset.id] : null;
+  if (game.attempts === 1){
+    if (wrongC) $('promptHint').textContent = T().hintWas(cName(wrongC));
+    hint(target, 3);
+  } else if (game.attempts === 2){
+    $('promptHint').textContent = T().hintMore;
+    hint(target, 1);
+  } else if (game.attempts >= 3 && !game.revealed){
+    game.revealed = true;
+    const el = byId[target.id].el;
+    el.classList.remove('active'); el.classList.add('reveal');
+    $('promptHint').textContent = T().hintReveal;
+  }
+  updateHud();
+}
+function hint(target, n){
+  const pool = game.queue.slice(game.idx + 1).map(c => byId[c.id].el);
+  const set = [byId[target.id].el];
+  while (set.length < n && pool.length){
+    const i = Math.floor(Math.random() * pool.length);
+    set.push(pool.splice(i,1)[0]);
+  }
+  for (const el of set){
+    el.classList.remove('hint'); void el.getBBox; el.classList.add('hint');
+    setTimeout(()=>el.classList.remove('hint'), 1700);
+  }
+}
+gCountries.addEventListener('click', ev => {
+  if (game.screen !== 'play' || suppressClick || tween || game.levelDone) return;
+  const el = ev.target;
+  if (!el.dataset || !el.dataset.id) return;
+  const target = game.queue[game.idx];
+  if (!target) return;
+  if (+el.dataset.id === +target.id){
+    if (el.classList.contains('found')) return;
+    handleCorrect(target);
+  } else if (el.classList.contains('active')){
+    handleWrong(el);
+  }
+});
+
+/* ---------- results ---------- */
+function endLevel(){
+  game.levelDone = true;
+  $('prompt').style.display = 'none';
+  $('progressBar').style.width = '100%';
+  const total = game.queue.length;
+  const acc = game.firstTry / total;
+  const stars = acc >= .9 ? 3 : acc >= .68 ? 2 : acc >= .42 ? 1 : 0;
+  const rec = store.continents[game.cont] || { stars: 0, best: 0 };
+  const isBest = game.score > rec.best;
+  rec.stars = Math.max(rec.stars, stars);
+  rec.best = Math.max(rec.best, game.score);
+  store.continents[game.cont] = rec; save();
+
+  flyTo(pad(MAP.continents[game.cont], 0.22), 1600);
+  setTimeout(() => {
+    game.screen = 'results';
+    $('resTitle').textContent = EMOJI[game.cont] + ' ' + T().complete(contName(game.cont));
+    $('resSub').textContent = T().sub(game.firstTry, total);
+    $('resScore').textContent = game.score;
+    $('resAcc').textContent = Math.round(acc * 100) + '%';
+    $('resStreak').textContent = game.bestStreak;
+    $('newBest').textContent = isBest && rec.best > 0 ? T().newBest : '';
+    const spans = $('resStars').querySelectorAll('span');
+    spans.forEach(s => s.classList.remove('lit'));
+    const nextCont = game.tour && game.tourIdx < CONTS.length - 1 ? CONTS[game.tourIdx + 1] : null;
+    $('btnNext').textContent = nextCont ? T().nextC(contName(nextCont)) : T().conts;
+    showScreen('resultsScreen');
+    sfx.fanfare();
+    for (let i = 0; i < stars; i++)
+      setTimeout(() => { spans[i].classList.add('lit'); sfx.star(i); }, 700 + i * 420);
+  }, 900);
+}
+$('btnReplay').addEventListener('click', () => startLevel(game.cont));
+$('btnNext').addEventListener('click', () => {
+  if (game.tour && game.tourIdx < CONTS.length - 1){
+    game.tourIdx++;
+    startLevel(CONTS[game.tourIdx]);
+  } else goSelect();
+});
+$('btnMenu').addEventListener('click', goTitle);
+$('btnQuit').addEventListener('click', goTitle);
+addEventListener('keydown', ev => { if (ev.key === 'Escape' && game.screen === 'play') goTitle(); });
+
+/* ---------- menus ---------- */
+function goTitle(){
+  game.screen = 'title'; game.tour = false;
+  $('hudTop').style.display = 'none';
+  $('zoomCtl').style.display = 'none';
+  $('prompt').style.display = 'none';
+  resetMapClasses();
+  showScreen('titleScreen');
+  panBounds = null;
+  driftBase = {...WORLD};
+  flyTo(WORLD, 1400);
+  setTimeout(()=>{ idleDrift = true; }, 1450);
+}
+function goSelect(){
+  game.screen = 'select'; game.tour = false;
+  $('hudTop').style.display = 'none';
+  $('zoomCtl').style.display = 'none';
+  $('prompt').style.display = 'none';
+  buildGrid();
+  showScreen('selectScreen');
+}
+function resetMapClasses(){
+  gLabels.innerHTML = '';
+  for (const id in byId){
+    const c = byId[id];
+    c.el.classList.remove('found','reveal','hint','wrongflash','justfound','dimmed','active');
+  }
+}
+function buildGrid(){
+  const grid = $('grid'); grid.innerHTML = '';
+  for (const cont of CONTS){
+    const rec = store.continents[cont] || { stars: 0, best: 0 };
+    const n = MAP.countries.filter(c => c.c === cont && c.q).length;
+    const box = pad(MAP.continents[cont], 0.06);
+    const paths = MAP.countries.filter(c => c.c === cont)
+      .map(c => `<path d="${c.d}" fill="${ACCENT[cont]}" fill-opacity=".85" stroke="#0a1428" stroke-width=".6"/>`).join('');
+    const card = document.createElement('button');
+    card.className = 'card';
+    card.style.setProperty('--ac', ACCENT[cont]);
+    card.innerHTML = `
+      <svg viewBox="${box.x} ${box.y} ${box.w} ${box.h}" preserveAspectRatio="xMidYMid meet">${paths}</svg>
+      <div class="cname">${EMOJI[cont]} ${contName(cont)}</div>
+      <div class="cmeta">
+        <span>${n} ${T().countries}</span>
+        <span class="stars">${'★'.repeat(rec.stars)}${'☆'.repeat(3-rec.stars)}</span>
+      </div>
+      ${rec.best ? `<div class="cmeta"><span class="best">${T().best} ${rec.best}</span></div>` : ''}`;
+    card.addEventListener('click', () => startLevel(cont));
+    grid.appendChild(card);
+  }
+}
+document.querySelectorAll('.langbtn').forEach(b => b.addEventListener('click', () => {
+  store.lang = b.dataset.lang; save(); applyLang();
+}));
+applyLang();
+$('btnTour').addEventListener('click', () => { game.tour = true; game.tourIdx = 0; startLevel(CONTS[0]); });
+$('btnPick').addEventListener('click', () => { ensureAudio(); goSelect(); });
+$('btnBackTitle').addEventListener('click', goTitle);
+
+/* ============================== main loop ============================== */
+function loop(t){
+  requestAnimationFrame(loop);
+  if (tween){
+    const k = Math.min(1, (t - tween.t0) / tween.dur);
+    const e = ease(k);
+    vb.x = tween.from.x + (tween.to.x - tween.from.x) * e;
+    vb.y = tween.from.y + (tween.to.y - tween.from.y) * e;
+    vb.w = tween.from.w + (tween.to.w - tween.from.w) * e;
+    vb.h = tween.from.h + (tween.to.h - tween.from.h) * e;
+    setVB();
+    if (k >= 1) tween = null;
+  } else if (idleDrift && game.screen !== 'play'){
+    vb.x = driftBase.x + Math.sin(t / 11000) * 14;
+    vb.y = driftBase.y + Math.cos(t / 13000) * 7;
+    setVB();
+  }
+  drawFx();
+}
+requestAnimationFrame(loop);
+setVB();
+</script>
+</body>
+</html>
